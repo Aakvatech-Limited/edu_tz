@@ -6,7 +6,6 @@ from frappe.utils import flt, nowdate
 
 def on_submit(doc, method):
 	create_journal_entry(doc)
-	pass
 
 
 def create_journal_entry(doc):

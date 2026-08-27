@@ -6,17 +6,9 @@ def execute(filters=None):
 	columns = get_columns(filters)
 
 	if filters.summary_based_on_month:
-		month_summary, chart = get_summary_based_on_month(filters)
-
-		if month_summary:
-			data = month_summary
-
-	if not filters.summary_based_on_month:
-		chart = {}
-		fee_data = get_fees(filters)
-
-		if fee_data:
-			data = fee_data
+		data, chart = get_summary_based_on_month(filters)
+	else:
+		data, chart = get_fees(filters), {}
 
 	return columns, data, chart
 
@@ -239,21 +231,7 @@ def get_fee_details(filters):
 	)
 
 	for student in fee_details:
-		txt = student.parent
-		program_class = ""
-		if student.academic_year != 2020 and "FORM" in txt and "TODDLERS" not in txt:
-			year, stream = txt.split("-")
-			program_class += stream
-		elif student.academic_year != 2020 and "FORM" not in txt and "TODDLERS" in txt:
-			year, stream = txt.split("-")
-			program_class += stream
-		elif student.academic_year != 2020 and "FORM" not in txt and "TODDLERS" not in txt:
-			year, pro, stream = txt.split("-")
-			program_class += pro + " - " + stream
-		else:
-			program_class += txt
-
-		student.update({"class_name": program_class})
+		student.update({"class_name": get_class_name(student)})
 
 		student_details.append(student)
 
@@ -264,48 +242,67 @@ def get_fee_details(filters):
 	return student_details, student_list
 
 
+def get_class_name(student) -> str:
+	"""Derives the class from the Student Group name, which encodes the year, program and stream.
+
+	Students outside an active group have no name to derive from, and a name that does not
+	split into the expected parts is reported as it stands.
+	"""
+	group_name = student.parent
+	if not group_name:
+		return ""
+
+	has_form = "FORM" in group_name
+	has_toddlers = "TODDLERS" in group_name
+	parts = group_name.split("-")
+
+	if student.academic_year == 2020 or (has_form and has_toddlers):
+		return group_name
+	if has_form != has_toddlers:
+		return parts[1] if len(parts) == 2 else group_name
+	return f"{parts[1]} - {parts[2]}" if len(parts) == 3 else group_name
+
+
 def get_summary_based_on_month(filters):
-	if filters.summary_based_on_month:
-		chart = {}
-		summary_data = []
+	summary_data = []
 
-		conditions = ""
-		if filters.get("company"):
-			conditions += " AND fe.company = %(company)s "
-		if filters.get("academic_year"):
-			conditions += " AND fe.academic_year = %(academic_year)s "
-			conditions += " AND p_en.academic_year = %(academic_year)s "
+	conditions = ""
+	if filters.get("company"):
+		conditions += " AND fe.company = %(company)s "
+	if filters.get("academic_year"):
+		conditions += " AND fe.academic_year = %(academic_year)s "
+		conditions += " AND p_en.academic_year = %(academic_year)s "
 
-		# conditions only add %(name)s placeholders, values are bound via filters
-		fee_details = frappe.db.sql(  # nosemgrep
-			f"""
-			SELECT YEAR(fe.due_date) as year, MONTHNAME(fe.due_date) AS month, fe.program, SUM(fe.grand_total) AS grand_total,
-				SUM(fe.outstanding_amount) AS outstanding_amount
-			FROM `tabFees` fe
-			INNER JOIN `tabProgram Enrollment` p_en ON fe.student = p_en.student AND fe.program = p_en.program
-			WHERE fe.docstatus = 1 AND p_en.docstatus = 1 {conditions}
-			GROUP BY MONTHNAME(fe.due_date), fe.program
-			ORDER BY YEAR(fe.due_date), MONTHNAME(fe.due_date), fe.program
-			""",
-			filters,
-			as_dict=1,
+	# conditions only add %(name)s placeholders, values are bound via filters
+	fee_details = frappe.db.sql(  # nosemgrep
+		f"""
+		SELECT YEAR(fe.due_date) as year, MONTHNAME(fe.due_date) AS month, fe.program, SUM(fe.grand_total) AS grand_total,
+			SUM(fe.outstanding_amount) AS outstanding_amount
+		FROM `tabFees` fe
+		INNER JOIN `tabProgram Enrollment` p_en ON fe.student = p_en.student AND fe.program = p_en.program
+		WHERE fe.docstatus = 1 AND p_en.docstatus = 1 {conditions}
+		GROUP BY MONTHNAME(fe.due_date), fe.program
+		ORDER BY YEAR(fe.due_date), MONTHNAME(fe.due_date), fe.program
+		""",
+		filters,
+		as_dict=1,
+	)
+
+	for fee in fee_details:
+		summary_data.append(
+			{
+				"year": fee.year,
+				"month": fee.month,
+				"program": fee.program,
+				"total_paid_amount": fee.grand_total - fee.outstanding_amount,
+				"outstanding_amount": fee.outstanding_amount,
+				"total_amount_to_be_paid": fee.grand_total,
+			}
 		)
 
-		for fee in fee_details:
-			summary_data.append(
-				{
-					"year": fee.year,
-					"month": fee.month,
-					"program": fee.program,
-					"total_paid_amount": fee.grand_total - fee.outstanding_amount,
-					"outstanding_amount": fee.outstanding_amount,
-					"total_amount_to_be_paid": fee.grand_total,
-				}
-			)
+	chart = get_chart_data(summary_data)
 
-		chart = get_chart_data(summary_data)
-
-		return summary_data, chart
+	return summary_data, chart
 
 
 def get_chart_data(summary_data):
