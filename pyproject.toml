@@ -4,10 +4,15 @@ authors = [
     { name = "Aakvatech", email = "info@aakvatech.com" }
 ]
 description = "edu_tz"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit",
+]
 
 [build-system]
 requires = ["flit_core >=3.4,<4"]

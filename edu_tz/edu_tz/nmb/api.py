@@ -29,22 +29,24 @@ def get_callback_url(callback_token: str) -> str:
 	return f"https://{get_host_name()}/api/method/{CALLBACK_METHOD}?token={callback_token}"
 
 
-def set_callback_token(doc, method):
+def set_callback_token(doc, method=None):
+	"""Stamps the bank fields straight onto the row: doc events cannot save or commit."""
 	send_fee_details_to_bank = frappe.get_value("Company", doc.company, "send_fee_details_to_bank") or 0
 	if not send_fee_details_to_bank:
 		return
-	doc.callback_token = binascii.hexlify(os.urandom(14)).decode()
 	series = frappe.get_value("Company", doc.company, "nmb_series") or ""
 	if not series:
 		frappe.throw(_("Please set NMB User Series in Company {0}").format(doc.company))
+	abbr = doc.abbr or frappe.get_value("Company", doc.company, "abbr") or ""
 	reference = str(series) + "F" + str(doc.name)
-	if not doc.abbr:
-		doc.abbr = frappe.get_value("Company", doc.company, "abbr") or ""
-	doc.bank_reference = reference.replace("-", "").replace("FEE" + doc.abbr, "")
-	if method == "invoice_submission":
-		doc.save()
-		# nosemgrep: frappe-manual-commit -- the token is sent to the bank next and must be persisted first
-		frappe.db.commit()
+	doc.db_set(
+		{
+			"callback_token": binascii.hexlify(os.urandom(14)).decode(),
+			"abbr": abbr,
+			"bank_reference": reference.replace("-", "").replace("FEE" + abbr, ""),
+		},
+		update_modified=False,
+	)
 
 
 def get_nmb_token(company):
@@ -140,7 +142,7 @@ def invoice_submission(doc: Any = None, method: Any = None, fees_name: Any = Non
 			_("This fee is not set with a token to be sent to the Bank. Generating the token..."),
 			alert=True,
 		)
-		set_callback_token(doc, "invoice_submission")
+		set_callback_token(doc)
 	series = frappe.get_value("Company", doc.company, "nmb_series") or ""
 	if not series:
 		frappe.throw(_("Please set NMB User Series in Company {0}").format(doc.company))
@@ -288,24 +290,25 @@ def reconciliation(doc=None, method=None):
 		for transaction in message["transactions"]:
 			if not is_known_callback(transaction):
 				continue
-			doc_info = get_fee_info(message["reference"])
+			doc_info = get_fee_info(transaction["reference"])
 			if not doc_info["name"]:
 				continue
-			message["fees_token"] = frappe.get_value(doc_info["doctype"], doc_info["name"], "callback_token")
-			message["doctype"] = "NMB Callback"
+			callback = dict(transaction)
+			callback["doctype"] = "NMB Callback"
+			callback["fees_token"] = frappe.get_value(doc_info["doctype"], doc_info["name"], "callback_token")
 			enqueue(
 				method=make_payment_entry,
 				queue="short",
 				timeout=10000,
 				is_async=True,
-				kwargs=frappe.get_doc(message),
+				kwargs=frappe.get_doc(callback),
 			)
 
 
-def is_known_callback(transaction) -> bool:
+def is_known_callback(transaction: dict) -> bool:
 	callbacks = frappe.get_all(
 		"NMB Callback",
-		filters={"reference": transaction.reference, "receipt": transaction.receipt},
+		filters={"reference": transaction["reference"], "receipt": transaction["receipt"]},
 		pluck="name",
 	)
 	return len(callbacks) == 1
