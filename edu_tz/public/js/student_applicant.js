@@ -5,8 +5,11 @@ frappe.ui.form.on('Student Applicant', {
 	refresh: function(frm) {
 		frm.trigger("setup_btns");
 	},
-	setup_btns: function(frm) {
-		if (!frm.send_fee_details_to_bank) {
+	fee_structure: function(frm) {
+		frm.trigger("setup_btns");
+	},
+	setup_btns: async function(frm) {
+		if (!await sends_fee_details_to_bank(frm)) {
 			return;
 		}
 		if(frm.doc.docstatus == 1 && frm.doc.application_status != "Approved") {
@@ -25,13 +28,18 @@ frappe.ui.form.on('Student Applicant', {
 			}
 		}
 	},
-	setup: function(frm) {
-		frappe.db.get_value('Fee Structure', frm.doc.fee_structure, ["company"], function(value1) {
-			frappe.db.get_value('Company', value1.company, ["send_fee_details_to_bank"], function(value2) {
-				frm.send_fee_details_to_bank = value2.send_fee_details_to_bank || 0;
-
-			});
-		});
-    },
-
 });
+
+// Resolved on demand: the buttons render before an answer fetched in `setup` comes back.
+async function sends_fee_details_to_bank(frm) {
+	if (!frm.doc.fee_structure) {
+		return false;
+	}
+	const structure = await frappe.db.get_value('Fee Structure', frm.doc.fee_structure, 'company');
+	const company = structure.message && structure.message.company;
+	if (!company) {
+		return false;
+	}
+	const settings = await frappe.db.get_value('Company', company, 'send_fee_details_to_bank');
+	return Boolean(settings.message && settings.message.send_fee_details_to_bank);
+}
