@@ -14,6 +14,14 @@ def fix_stale_fees_outstanding():
 	pass doesn't complete for an entry (timeout, lock, worker restart), the Payment
 	Ledger Entry stays correctly linked but Fees.outstanding_amount is left stale
 	with no error raised anywhere. This task finds and corrects that drift daily.
+
+	Only the "outstanding_amount is too high" direction is corrected here
+	(outstanding_amount > grand_total + ple_net). Many old Fees, especially
+	anything predating the Payment Ledger Entry system, are legitimately marked
+	outstanding_amount = 0 with no Payment Ledger Entry behind them at all —
+	correcting those against the ledger would wrongly reopen fees that were
+	settled years ago. Only fees where real, linked ledger money exists that
+	isn't reflected in the field are touched.
 	"""
 	drifted = frappe.db.sql(
 		"""
@@ -31,7 +39,7 @@ def fix_stale_fees_outstanding():
 			and ple.delinked = 0
 		where f.docstatus = 1
 		group by f.name, f.receivable_account, f.student
-		having outstanding_amount != grand_total + ple_net
+		having outstanding_amount > grand_total + ple_net
 		""",
 		as_dict=True,
 	)
