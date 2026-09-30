@@ -3,6 +3,8 @@ from erpnext.accounts.utils import update_voucher_outstanding
 from frappe import _
 from frappe.utils import getdate
 
+from edu_tz.edu_tz.api.student import get_student_customer
+
 
 def on_submit(doc, method):
 	create_sales_invoice(doc)
@@ -19,9 +21,7 @@ def create_sales_invoice(doc):
 			frappe.throw(_("Fees document {0} has no fee components").format(fees_doc.name))
 		item_name = fees_doc.components[0].fees_category
 		income_account = fees_doc.sales_invoice_income_account
-		customer = frappe.get_value("Student", doc.party, "customer")
-		if not customer:
-			frappe.throw(_("Please set Customer in Student record"))
+		customer = get_student_customer(doc.party)
 		cost_center = frappe.get_value("Company", doc.company, "cost_center")
 		sales_invoice = frappe.new_doc("Sales Invoice")
 		sales_invoice.customer = customer
