@@ -13,7 +13,7 @@ import requests
 from csf_tz.csf_tz.doctype.csf_api_response_log.csf_api_response_log import add_log
 from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
 from frappe import _
-from frappe.utils import flt, get_host_name
+from frappe.utils import cint, flt, get_host_name
 from frappe.utils.background_jobs import enqueue
 from frappe.utils.password import get_decrypted_password
 
@@ -207,8 +207,73 @@ def make_payment_entry(method="callback", **kwargs):
 			doc = frappe.get_doc("Student Applicant Fees", doc_info["name"])
 			if not doc.callback_token == nmb_doc.fees_token:
 				return
-			frappe.db.set_value("Student Applicant", doc.student, "application_status", "Approved")
+			auto_approve_student_applicant(doc, nmb_doc)
 			return nmb_doc
+
+
+def auto_approve_student_applicant(fee_doc, nmb_doc):
+	"""Approve the Student Applicant for Program Enrollment once its registration fee is paid.
+
+	Controlled by Edu Tz Settings: "Enable Auto Program Enrollment" switches this on, and
+	"Partial Payment" (the same setting sent to the bank) decides whether any payment is enough
+	or the full registration fee is required. Applicants can always be approved or rejected manually.
+	"""
+	if not cint(frappe.db.get_single_value("Edu Tz Settings", "enable_auto_program_enrollment")):
+		return
+	allow_partial = cint(frappe.db.get_single_value("Edu Tz Settings", "partial_payment"))
+
+	applicant = frappe.get_doc("Student Applicant", fee_doc.student)
+	nmb_amount = flt(nmb_doc.amount)
+
+	# only applicants waiting for the fee; never override a manual approval, rejection or admission
+	if applicant.application_status != "Awaiting Registration Fees":
+		applicant.add_comment(
+			"Comment",
+			_(
+				"Registration fee payment of {0} received (bank receipt {1}) while status is {2}. "
+				"Not auto-approved, please review."
+			).format(nmb_amount, nmb_doc.receipt, applicant.application_status),
+		)
+		return
+
+	# the callback being processed may not be committed yet, so add it separately; count each receipt once
+	previous = frappe.db.sql(
+		"""
+		select coalesce(sum(amount), 0)
+		from (
+			select max(amount) as amount
+			from `tabNMB Callback`
+			where reference = %(reference)s and ifnull(receipt, '') != %(receipt)s
+			group by receipt
+		) as receipts
+		""",
+		{"reference": nmb_doc.reference, "receipt": nmb_doc.receipt or ""},
+	)[0][0]
+	total_paid = flt(previous) + nmb_amount
+	fully_paid = total_paid >= flt(fee_doc.grand_total)
+
+	if not fully_paid and not allow_partial:
+		applicant.add_comment(
+			"Comment",
+			_(
+				"Partial registration fee payment received: {0} of {1} (bank receipt {2}). "
+				"Waiting for full payment before auto-approval."
+			).format(total_paid, fee_doc.grand_total, nmb_doc.receipt),
+		)
+		return
+
+	frappe.db.set_value(
+		"Student Applicant",
+		applicant.name,
+		{"application_status": "Approved", "paid": 1 if fully_paid else 0},
+	)
+	applicant.add_comment(
+		"Comment",
+		_(
+			"Auto-approved for Program Enrollment after registration fee payment of {0} of {1} "
+			"(bank receipt {2})."
+		).format(total_paid, fee_doc.grand_total, nmb_doc.receipt),
+	)
 
 
 def make_fees_payment_entry(fees_name, nmb_doc, nmb_amount):
@@ -344,4 +409,6 @@ def url_fix(url: str) -> str:
 	path = quote(url.path, safe="/%+$!*'(),")
 	qs = quote(url.query, safe=":&%=+$!*'(),")
 	anchor = quote(url.fragment, safe=":&%=+$!*'(),")
-	return urlunparse((url.scheme, url.netloc, path, qs, "", anchor))
+	# urlunparse order is (scheme, netloc, path, params, query, fragment); the query must stay
+	# in the query slot or "?token=..." turns into ";token=..." and the callback token is lost
+	return urlunparse((url.scheme, url.netloc, path, url.params, qs, anchor))
