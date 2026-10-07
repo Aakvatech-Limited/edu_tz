@@ -7,7 +7,9 @@
  "field_order": [
   "default_education_instituation",
   "column_break_qjji",
-  "partial_payment"
+  "partial_payment",
+  "auto_enrollment_section",
+  "enable_auto_program_enrollment"
  ],
  "fields": [
   {
@@ -25,12 +27,24 @@
    "fieldname": "partial_payment",
    "fieldtype": "Check",
    "label": "Partial Payment"
+  },
+  {
+   "fieldname": "auto_enrollment_section",
+   "fieldtype": "Section Break",
+   "label": "Student Applicant Auto Enrollment"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_auto_program_enrollment",
+   "fieldtype": "Check",
+   "label": "Enable Auto Program Enrollment",
+   "description": "Automatically approve a Student Applicant for Program Enrollment once the registration fee is paid through the bank control number. If Partial Payment is checked, any payment approves the applicant; otherwise the full registration fee is required. Applicants can still be approved or rejected manually."
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-09-15 10:12:46.040741",
+ "modified": "2026-10-05 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Edu Tz",
  "name": "Edu Tz Settings",
