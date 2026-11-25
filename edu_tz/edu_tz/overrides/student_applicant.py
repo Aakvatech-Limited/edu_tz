@@ -31,7 +31,7 @@ def make_student_applicant_fees(doc: Any, method: Any = None):
 			"fee_structure": doc.fee_structure,
 			"grand_total": fee_structure.total_amount,
 			"receivable_account": fee_structure.receivable_account,
-			"income_account": fee_structure.income_account,
+			"income_account": fee_structure.sales_invoice_income_account,
 			"cost_center": fee_structure.cost_center,
 		}
 	)

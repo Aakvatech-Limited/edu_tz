@@ -4,10 +4,10 @@
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
+from frappe.tests import IntegrationTestCase
 
 # The tests use the site's Company and ignore mandatory links, so skip ERPNext/education test records.
-test_ignore = [
+IGNORE_TEST_RECORD_DEPENDENCIES = [
 	"Academic Term",
 	"Academic Year",
 	"Account",
@@ -25,7 +25,7 @@ test_ignore = [
 ]
 
 
-class TestStudentApplicantFees(FrappeTestCase):
+class TestStudentApplicantFees(IntegrationTestCase):
 	"""after_insert stamps the bank fields only when the company sends fee details to NMB."""
 
 	def setUp(self):
@@ -66,6 +66,11 @@ class TestStudentApplicantFees(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			self.make_fees().insert(ignore_permissions=True, ignore_mandatory=True)
+
+	def test_the_desk_can_route_to_the_doctype(self):
+		"""A domain restriction keeps the DocType out of can_read, and the desk route 404s."""
+		self.assertFalse(frappe.db.get_value("DocType", "Student Applicant Fees", "restrict_to_domain"))
+		self.assertIn("Student Applicant Fees", frappe.permissions.get_doctypes_with_read())
 
 	def test_submit_skips_bank_when_disabled(self):
 		frappe.db.set_value("Company", self.company, "send_fee_details_to_bank", 0)

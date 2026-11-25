@@ -59,7 +59,7 @@ frappe.ui.form.on('Student Applicant Fees', {
 	student: function(frm) {
 		if (frm.doc.student) {
 			frappe.call({
-				method:"erpnext.education.api.get_current_enrollment",
+				method:"education.education.api.get_current_enrollment",
 				args: {
 					"student": frm.doc.student,
 					"academic_year": frm.doc.academic_year

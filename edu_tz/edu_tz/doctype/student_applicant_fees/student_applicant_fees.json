@@ -411,7 +411,6 @@
    "write": 1
   }
  ],
- "restrict_to_domain": "Education",
  "search_fields": "student, student_name",
  "show_name_in_global_search": 1,
  "sort_field": "modified",

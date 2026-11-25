@@ -45,7 +45,7 @@ def execute(filters):
 			"academic_year": filters.academic_year,
 			"company": filters.company,
 		},
-		fields=["program", "count(student) as no_of_students"],
+		fields=["program", {"COUNT": "student", "as": "no_of_students"}],
 		group_by="program",
 	)
 
